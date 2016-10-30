@@ -100,16 +100,7 @@
 #include <limits.h>
 #include <float.h>
 #include "lsd.h"
-
-/** ln(10) */
-#ifndef M_LN10
-#define M_LN10 2.30258509299404568402
-#endif				/* !M_LN10 */
-
-/** PI */
-#ifndef M_PI
-#define M_PI   3.14159265358979323846
-#endif				/* !M_PI */
+#include "comm_math.h"
 
 #ifndef FALSE
 #define FALSE 0
@@ -121,12 +112,6 @@
 
 /** Label for pixels with undefined gradient. */
 #define NOTDEF -1024.0
-
-/** 3/2 pi */
-#define M_3_2_PI 4.71238898038
-
-/** 2 pi */
-#define M_2__PI  6.28318530718
 
 /** Label for pixels not used in yet. */
 #define NOTUSED 0
@@ -162,54 +147,6 @@ static void error(char *msg)
 	exit(EXIT_FAILURE);
 }
 
-/*----------------------------------------------------------------------------*/
-/** Doubles relative error factor
- */
-#define RELATIVE_ERROR_FACTOR 100.0
-
-/*----------------------------------------------------------------------------*/
-/** Compare doubles by relative error.
-
-    The resulting rounding error after floating point computations
-    depend on the specific operations done. The same number computed by
-    different algorithms could present different rounding errors. For a
-    useful comparison, an estimation of the relative rounding error
-    should be considered and compared to a factor times EPS. The factor
-    should be related to the cumulated rounding error in the chain of
-    computation. Here, as a simplification, a fixed factor is used.
- */
-static int double_equal(double a, double b)
-{
-	double abs_diff, aa, bb, abs_max;
-
-	/* trivial case */
-	if (a == b)
-		return TRUE;
-
-	abs_diff = fabs(a - b);
-	aa = fabs(a);
-	bb = fabs(b);
-	abs_max = aa > bb ? aa : bb;
-
-	/* DBL_MIN is the smallest normalized number, thus, the smallest
-	   number whose relative error is bounded by DBL_EPSILON. For
-	   smaller numbers, the same quantization steps as for DBL_MIN
-	   are used. Then, for smaller numbers, a meaningful "relative"
-	   error should be computed by dividing the difference by DBL_MIN. */
-	if (abs_max < DBL_MIN)
-		abs_max = DBL_MIN;
-
-	/* equal if relative error <= factor x eps */
-	return (abs_diff / abs_max) <= (RELATIVE_ERROR_FACTOR * DBL_EPSILON);
-}
-
-/*----------------------------------------------------------------------------*/
-/** Computes Euclidean distance between point (x1,y1) and point (x2,y2).
- */
-static double dist(double x1, double y1, double x2, double y2)
-{
-	return sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
-}
 
 /*----------------------------------------------------------------------------*/
 /*----------------------- 'list of n-tuple' data type ------------------------*/
@@ -966,34 +903,6 @@ static int isaligned(int x, int y, image_double angles, double theta,
 }
 
 /*----------------------------------------------------------------------------*/
-/** Absolute value angle difference.
- */
-static double angle_diff(double a, double b)
-{
-	a -= b;
-	while (a <= -M_PI)
-		a += M_2__PI;
-	while (a > M_PI)
-		a -= M_2__PI;
-	if (a < 0.0)
-		a = -a;
-	return a;
-}
-
-/*----------------------------------------------------------------------------*/
-/** Signed angle difference.
- */
-static double angle_diff_signed(double a, double b)
-{
-	a -= b;
-	while (a <= -M_PI)
-		a += M_2__PI;
-	while (a > M_PI)
-		a -= M_2__PI;
-	return a;
-}
-
-/*----------------------------------------------------------------------------*/
 /*----------------------------- NFA computation ------------------------------*/
 /*----------------------------------------------------------------------------*/
 
@@ -1314,56 +1223,6 @@ typedef struct {
 	double ys, ye;		/* start and end Y values of current 'column' */
 	int x, y;		/* coordinates of currently explored pixel */
 } rect_iter;
-
-/*----------------------------------------------------------------------------*/
-/** Interpolate y value corresponding to 'x' value given, in
-    the line 'x1,y1' to 'x2,y2'; if 'x1=x2' return the smaller
-    of 'y1' and 'y2'.
-
-    The following restrictions are required:
-    - x1 <= x2
-    - x1 <= x
-    - x  <= x2
- */
-static double inter_low(double x, double x1, double y1, double x2, double y2)
-{
-	/* check parameters */
-	if (x1 > x2 || x < x1 || x > x2)
-		error
-		    ("inter_low: unsuitable input, 'x1>x2' or 'x<x1' or 'x>x2'.");
-
-	/* interpolation */
-	if (double_equal(x1, x2) && y1 < y2)
-		return y1;
-	if (double_equal(x1, x2) && y1 > y2)
-		return y2;
-	return y1 + (x - x1) * (y2 - y1) / (x2 - x1);
-}
-
-/*----------------------------------------------------------------------------*/
-/** Interpolate y value corresponding to 'x' value given, in
-    the line 'x1,y1' to 'x2,y2'; if 'x1=x2' return the larger
-    of 'y1' and 'y2'.
-
-    The following restrictions are required:
-    - x1 <= x2
-    - x1 <= x
-    - x  <= x2
- */
-static double inter_hi(double x, double x1, double y1, double x2, double y2)
-{
-	/* check parameters */
-	if (x1 > x2 || x < x1 || x > x2)
-		error
-		    ("inter_hi: unsuitable input, 'x1>x2' or 'x<x1' or 'x>x2'.");
-
-	/* interpolation */
-	if (double_equal(x1, x2) && y1 < y2)
-		return y2;
-	if (double_equal(x1, x2) && y1 > y2)
-		return y1;
-	return y1 + (x - x1) * (y2 - y1) / (x2 - x1);
-}
 
 /*----------------------------------------------------------------------------*/
 /** Free memory used by a rectangle iterator.

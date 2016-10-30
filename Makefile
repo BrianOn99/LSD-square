@@ -3,6 +3,7 @@
 # LSD - Line Segment Detector on digital images
 #
 # Copyright (c) 2007-2011 rafael grompone von gioi <grompone@gmail.com>
+# Copyright (c) 2016 Chiu Yue Chun [aka BrianOn99] <chiu6700@gmail.com>
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -19,13 +20,17 @@
 #
 # -----------------------------------------------------------------------------
 
+
+CC = gcc
+CFLAGS = -std=gnu99 -O2 -Wall
+
 all: lsd lsd_call_example
 
-lsd: lsd.c lsd.h lsd_cmd.c
-	cc -O3 -o lsd lsd_cmd.c lsd.c -lm
+lsd: lsd.c comm_math.c lsd_cmd.c
+	$(CC) $(CFLAGS) -o $@ $^ -lm
 
-lsd_call_example: lsd.c lsd.h lsd_call_example.c
-	cc -o lsd_call_example lsd_call_example.c lsd.c -lm
+lsd_call_example: lsd.c comm_math.c lsd_call_example.c
+	$(CC) $(CFLAGS) -o $@ $^ -lm
 
 doc: lsd.c lsd.h doxygen.config
 	doxygen doxygen.config
