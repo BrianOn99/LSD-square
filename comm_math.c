@@ -134,3 +134,22 @@ int double_equal(double a, double b)
 	/* equal if relative error <= factor x eps */
 	return (abs_diff / abs_max) <= (RELATIVE_ERROR_FACTOR * DBL_EPSILON);
 }
+
+void make_unit_vector(struct vector *unit_vector, double x_len, double y_len)
+{
+	double magnitude = sqrt(y_len * y_len + x_len * x_len);
+	unit_vector->x = x_len / magnitude;
+	unit_vector->y = y_len / magnitude;
+}
+
+void make_mag_vector(struct mag_vector *vec, double x_len, double y_len) {
+	double magnitude = sqrt(y_len * y_len + x_len * x_len);
+	vec->unit_vec.x = x_len / magnitude;
+	vec->unit_vec.y = y_len / magnitude;
+	vec->magnitude = magnitude;
+}
+
+inline double dot_product(struct vector *v1, struct vector *v2)
+{
+	return v1->x * v2->x + v1->y * v2->y;
+}
