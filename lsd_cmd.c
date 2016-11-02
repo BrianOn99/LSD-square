@@ -34,6 +34,8 @@
 #version: 1.6 of November 11, 2011                                             \
 #year: 2007-2011                                                               \
 #desc: Line Segment Detector                                                   \
+#opt: square_detect | C | bool | | | |                                         \
+      Use square detection mode                                                \
 #opt: scale | s | double | 0.8 | 0.0 | |                                       \
       Scale image by Gaussian filter before processing.                        \
 #opt: sigma_coef | c | double | 0.6 | 0.0 | |                                  \
@@ -65,6 +67,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "lsd.h"
+#include "lsd_square.h"
 
 #ifndef FALSE
 #define FALSE 0
@@ -1073,6 +1076,44 @@ static void write_eps(double *segs, int n, int dim,
 		error("Error: unable to close file while writing EPS file.");
 }
 
+static void write_eps_corner(struct point_d corners[4],
+		      char *filename, int xsize, int ysize)
+{
+	FILE *eps;
+	int i;
+
+	/* check input */
+	if (xsize <= 0 || ysize <= 0)
+		error("Error: invalid image size in write_eps.");
+
+	/* open file */
+	if (strcmp(filename, "-") == 0)
+		eps = stdout;
+	else
+		eps = fopen(filename, "w");
+	if (eps == NULL)
+		error("Error: unable to open EPS output file.");
+
+	/* write EPS header */
+	fprintf(eps, "%%!PS-Adobe-3.0 EPSF-3.0\n");
+	fprintf(eps, "%%%%BoundingBox: 0 0 %d %d\n", xsize, ysize);
+	fprintf(eps, "%%%%Creator: LSD, Line Segment Detector\n");
+	fprintf(eps, "%%%%Title: (%s)\n", filename);
+	fprintf(eps, "%%%%EndComments\n");
+
+	for (i = 0; i < 4; i++) {
+		fprintf(eps,
+			"%f %f 8 0 360 arc closepath stroke\n",
+			corners[i].x, (double)ysize - corners[i].y);
+	}
+
+	/* close EPS file */
+	fprintf(eps, "showpage\n");
+	fprintf(eps, "%%%%EOF\n");
+	if (eps != stdout && fclose(eps) == EOF)
+		error("Error: unable to close file while writing EPS file.");
+}
+
 /*----------------------------------------------------------------------------*/
 /*----------------------------- Write SVG File -------------------------------*/
 /*----------------------------------------------------------------------------*/
@@ -1143,6 +1184,19 @@ int main(int argc, char **argv)
 
 	/* read input file */
 	image = read_pgm_image_double(&X, &Y, get_str(arg, "in"));
+
+	if (is_assigned(arg, "square_detect")) {
+		struct point_d corners[4];
+		int is_success = find_square_corner_bitmap(corners, image, X, Y);
+		if (is_success) {
+			printf("! square found\n");
+			if (is_assigned(arg, "epsfile"))
+				write_eps_corner(corners, get_str(arg, "epsfile"), X, Y);
+		} else {
+			printf("No square found\n");
+		}
+		return 0;
+	}
 
 	/* execute LSD */
 	segs = LineSegmentDetection(&n, image, X, Y,

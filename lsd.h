@@ -1,3 +1,6 @@
+#ifndef __LSD_H
+#define __LSD_H
+
 /*----------------------------------------------------------------------------
 
   LSD - Line Segment Detector on digital images
@@ -279,3 +282,5 @@ double * lsd(int * n_out, double * img, int X, int Y);
 
 #endif /* !LSD_HEADER */
 /*----------------------------------------------------------------------------*/
+
+#endif

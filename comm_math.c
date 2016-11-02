@@ -135,6 +135,11 @@ int double_equal(double a, double b)
 	return (abs_diff / abs_max) <= (RELATIVE_ERROR_FACTOR * DBL_EPSILON);
 }
 
+void make_mag_vector_by_line(struct mag_vector *vec, struct line* l)
+{
+	make_mag_vector(vec, l->x2 - l->x1, l->y2 - l->y1);
+}
+
 void make_unit_vector(struct vector *unit_vector, double x_len, double y_len)
 {
 	double magnitude = sqrt(y_len * y_len + x_len * x_len);
@@ -142,14 +147,71 @@ void make_unit_vector(struct vector *unit_vector, double x_len, double y_len)
 	unit_vector->y = y_len / magnitude;
 }
 
-void make_mag_vector(struct mag_vector *vec, double x_len, double y_len) {
+void make_mag_vector(struct mag_vector *vec, double x_len, double y_len)
+{
 	double magnitude = sqrt(y_len * y_len + x_len * x_len);
 	vec->unit_vec.x = x_len / magnitude;
 	vec->unit_vec.y = y_len / magnitude;
 	vec->magnitude = magnitude;
 }
 
+void reverse_line(struct line *l)
+{
+	double tmp;
+	tmp = l->x1;
+	l->x1 = l->x2;
+	l->x2 = tmp;
+	tmp = l->y1;
+	l->y1 = l->y2;
+	l->y2 = tmp;
+}
+
+/*
+ * Inner product (aka dot product) of 2D vectors.
+ */
 inline double dot_product(struct vector *v1, struct vector *v2)
 {
 	return v1->x * v2->x + v1->y * v2->y;
+}
+
+/*
+ * 2x2 determinant
+ */
+double det2by2(double M11, double M12, double M21, double M22)
+{
+	return M11 * M22 - M12 * M21;
+}
+
+/*
+ * From https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
+ * y3 y4 are the y cordinate of the ends of line2
+ * |...| is determinant
+ *
+ *        x-coordinate           y-coordinaate
+ *    ||x1  y1|  |x1   1||    ||x1  y1| |y1   1||
+ *    ||x2  y2|  |x2   1||    ||x2  y2| |y2   1||
+ *    |                  |    |                 |
+ *    ||x3  y3|  |x3   1||    ||x3  y3| |y3   1||
+ *    ||x4  y4|  |x4   1||    ||x4  y4| |y4   1||
+ *    ---------------------  --------------------
+ *    ||x1   1|  |y1   1||    ||x1  y1| |y1   1||
+ *    ||x2   1|  |y2   1||    ||x2  y2| |y2   1||
+ *    |                  |    |                 |
+ *    ||x3   1|  |y3   1||    ||x3  y3| |y3   1||
+ *    ||x4   1|  |y4   1||    ||x4  y4| |y4   1||
+ */
+void line_intersection(struct point_d *res, struct line *l1, struct line *l2)
+{
+	double a, b, c, d, e, f;
+	double dividend;
+	a = det2by2(l1->x1, 1, l1->x2, 1);
+	b = det2by2(l1->y1, 1, l1->y2, 1);
+	c = det2by2(l2->x1, 1, l2->x2, 1);
+	d = det2by2(l2->y1, 1, l2->y2, 1);
+	e = det2by2(l1->x1, l1->y1, l1->x2, l1->y2);
+	f = det2by2(l2->x1, l2->y1, l2->x2, l2->y2);
+	dividend = det2by2(a, b, c, d);
+
+	res->x = det2by2(e, a, f, c) / dividend;
+	res->y = det2by2(e, b, f, d) / dividend;
 }

@@ -1,5 +1,10 @@
 doc/
 doxygen.config
-lsd
+lsd_cmd
 lsd_call_example
 tags
+
+*.pgm
+*.eps
+*.svg
+*.jpg

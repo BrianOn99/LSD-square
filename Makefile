@@ -22,11 +22,9 @@
 
 
 CC = gcc
-CFLAGS = -std=gnu99 -O2 -Wall
+CFLAGS = -std=c99 -O2 -Wall
 
-all: lsd lsd_call_example
-
-lsd: lsd.c comm_math.c lsd_cmd.c
+lsd_cmd: lsd.c comm_math.c lsd_cmd.c lsd_square.c
 	$(CC) $(CFLAGS) -o $@ $^ -lm
 
 lsd_call_example: lsd.c comm_math.c lsd_call_example.c
@@ -35,10 +33,16 @@ lsd_call_example: lsd.c comm_math.c lsd_call_example.c
 doc: lsd.c lsd.h doxygen.config
 	doxygen doxygen.config
 
+debug: CFLAGS += -DDEBUG
+debug: lsd_cmd
+
+.PHONY: clean
+
 clean:
-	rm -f lsd lsd_call_example
+	rm -f lsd_cmd lsd_call_example
 
 cleandoc:
 	rm -rf doc
 
 # -----------------------------------------------------------------------------
+#
