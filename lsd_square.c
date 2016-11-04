@@ -302,7 +302,7 @@ int find_square_corner(struct point_d res_pt[4], struct line *lines, unsigned n,
 /*
  * A wrapper to find_square, for bitmap input
  */
-int find_square_corner_bitmap(struct point_d res_pt[4], double *image, int X, int Y)
+int find_square_corner_bitmap(struct point_d res_pt[4], unsigned char *image, int X, int Y)
 {
 	int n;
 	unsigned m;

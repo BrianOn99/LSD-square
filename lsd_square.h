@@ -11,6 +11,6 @@ struct scored_square {
 struct line* join_lines(unsigned in_count, struct line  out_lines[], double in_lines[], unsigned *out_count, double thres_dist);
 void find_square(struct scored_square *res_square, struct line *lines, unsigned n, int X, int Y);
 int find_square_corner(struct point_d res_pt[4], struct line *lines, unsigned n, int X, int Y);
-int find_square_corner_bitmap(struct point_d res_pt[4], double *image, int X, int Y);
+int find_square_corner_bitmap(struct point_d res_pt[4], unsigned char *image, int X, int Y);
 
 #endif

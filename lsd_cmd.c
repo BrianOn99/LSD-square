@@ -892,6 +892,8 @@ static int get_num(FILE * f)
 	return num;
 }
 
+#if 0
+#original LSD 1.6 function, not used anymore
 /*----------------------------------------------------------------------------*/
 /** Read a PGM file into an double image.
     If the name is "-" the file is read from standard input.
@@ -947,6 +949,69 @@ static double *read_pgm_image_double(int *X, int *Y, char *name)
 		for (x = 0; x < xsize; x++)
 			image[x + y * xsize] = bin ? (double)getc(f)
 			    : (double)get_num(f);
+
+	/* close file if needed */
+	if (f != stdin && fclose(f) == EOF)
+		error("Error: unable to close file while reading PGM file.");
+
+	/* return image */
+	*X = xsize;
+	*Y = ysize;
+	return image;
+}
+#endif
+
+static unsigned char *read_pgm_image_char(int *X, int *Y, char *name)
+{
+	FILE *f;
+	int c, bin;
+	int xsize, ysize, depth, x, y;
+	unsigned char *image;
+
+	/* open file */
+	if (strcmp(name, "-") == 0)
+		f = stdin;
+	else
+		f = fopen(name, "rb");
+	if (f == NULL)
+		error("Error: unable to open input image file.");
+
+	/* read header */
+	if (getc(f) != 'P')
+		error("Error: not a PGM file!");
+	if ((c = getc(f)) == '2')
+		bin = FALSE;
+	else if (c == '5')
+		bin = TRUE;
+	else
+		error("Error: not a PGM file!");
+	skip_whites_and_comments(f);
+	xsize = get_num(f);	/* X size */
+	if (xsize <= 0)
+		error("Error: X size <=0, invalid PGM file\n");
+	skip_whites_and_comments(f);
+	ysize = get_num(f);	/* Y size */
+	if (ysize <= 0)
+		error("Error: Y size <=0, invalid PGM file\n");
+	skip_whites_and_comments(f);
+	depth = get_num(f);	/* depth */
+	if (depth <= 0)
+		fprintf(stderr,
+			"Warning: depth<=0, probably invalid PGM file\n");
+	/* white before data */
+	if (!isspace(c = getc(f)))
+		error("Error: corrupted PGM file.");
+
+	/* get memory */
+	image = (unsigned char *)calloc((size_t) (xsize * ysize), sizeof(unsigned char));
+	if (image == NULL)
+		error("Error: not enough memory.");
+
+	/* read data */
+	for (y = 0; y < ysize; y++)
+		for (x = 0; x < xsize; x++)
+			image[x + y * xsize] = bin ? getc(f)
+			    : get_num(f);
 
 	/* close file if needed */
 	if (f != stdin && fclose(f) == EOF)
@@ -1173,7 +1238,7 @@ int main(int argc, char **argv)
 {
 	struct arguments *arg = process_arguments(USE, argc, argv);
 	FILE *output;
-	double *image;
+	unsigned char *image;
 	int X, Y;
 	double *segs;
 	int n;
@@ -1183,7 +1248,7 @@ int main(int argc, char **argv)
 	int i, j;
 
 	/* read input file */
-	image = read_pgm_image_double(&X, &Y, get_str(arg, "in"));
+	image = read_pgm_image_char(&X, &Y, get_str(arg, "in"));
 
 	if (is_assigned(arg, "square_detect")) {
 		struct point_d corners[4];

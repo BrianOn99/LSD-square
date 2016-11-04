@@ -411,11 +411,14 @@ static image_int new_image_int_ini(unsigned int xsize, unsigned int ysize,
       image->data[ x + y * image->xsize ]
 
     with x and y integer.
+
+    Primary usage is to store gradient line field angle
  */
 typedef struct image_double_s {
 	double *data;
 	unsigned int xsize, ysize;
 } *image_double;
+
 
 /*----------------------------------------------------------------------------*/
 /** Free memory used in image_double 'i'.
@@ -459,19 +462,19 @@ static image_double new_image_double(unsigned int xsize, unsigned int ysize)
 /** Create a new image_double of size 'xsize' times 'ysize'
     with the data pointed by 'data'.
  */
-static image_double new_image_double_ptr(unsigned int xsize,
-					 unsigned int ysize, double *data)
+static struct image_char_s* new_image_char_ptr(unsigned int xsize,
+					 unsigned int ysize, unsigned char *data)
 {
-	image_double image;
+	struct image_char_s *image;
 
 	/* check parameters */
 	if (xsize == 0 || ysize == 0)
-		error("new_image_double_ptr: invalid image size.");
+		error("new_image_char_ptr: invalid image size.");
 	if (data == NULL)
-		error("new_image_double_ptr: NULL data pointer.");
+		error("new_image_char_ptr: NULL data pointer.");
 
 	/* get memory */
-	image = (image_double) malloc(sizeof(struct image_double_s));
+	image = (image_char) malloc(sizeof(struct image_char_s));
 	if (image == NULL)
 		error("not enough memory.");
 
@@ -561,10 +564,10 @@ static void gaussian_kernel(ntuple_list kernel, double sigma, double mean)
     in the x axis, and then the combined Gaussian kernel and sampling
     in the y axis.
  */
-static image_double gaussian_sampler(image_double in, double scale,
+static struct image_char_s* gaussian_sampler(struct image_char_s *in, double scale,
 				     double sigma_scale)
 {
-	image_double aux, out;
+	struct image_char_s *aux, *out;
 	ntuple_list kernel;
 	unsigned int N, M, h, n, x, y, i;
 	int xc, yc, j, double_x_size, double_y_size;
@@ -585,8 +588,8 @@ static image_double gaussian_sampler(image_double in, double scale,
 		    ("gaussian_sampler: the output image size exceeds the handled size.");
 	N = (unsigned int)ceil(in->xsize * scale);
 	M = (unsigned int)ceil(in->ysize * scale);
-	aux = new_image_double(N, in->ysize);
-	out = new_image_double(N, M);
+	aux = new_image_char(N, in->ysize);
+	out = new_image_char(N, M);
 
 	/* sigma, kernel size and memory for the kernel */
 	sigma = scale < 1.0 ? sigma_scale / scale : sigma_scale;
@@ -635,9 +638,8 @@ static image_double gaussian_sampler(image_double in, double scale,
 				if (j >= (int)in->xsize)
 					j = double_x_size - 1 - j;
 
-				sum +=
-				    in->data[j +
-					     y * in->xsize] * kernel->values[i];
+				sum += in->data[j + y * in->xsize] 
+					    * kernel->values[i];
 			}
 			aux->data[x + y * aux->xsize] = sum;
 		}
@@ -682,7 +684,7 @@ static image_double gaussian_sampler(image_double in, double scale,
 
 	/* free memory */
 	free_ntuple_list(kernel);
-	free_image_double(aux);
+	free_image_char(aux);
 
 	return out;
 }
@@ -708,7 +710,7 @@ static image_double gaussian_sampler(image_double in, double scale,
     - a pointer 'mem_p' to the memory used by 'list_p' to be able to
       free the memory when it is not used anymore.
  */
-static image_double ll_angle(image_double in, double threshold,
+static image_double ll_angle(image_char in, double threshold,
 			     struct coorlist **list_p, void **mem_p,
 			     image_double * modgrad, unsigned int n_bins)
 {
@@ -1981,15 +1983,15 @@ static int refine(struct point *reg, int *reg_size, image_double modgrad,
 /** LSD full interface.
  */
 double *LineSegmentDetection(int *n_out,
-			     double *img, int X, int Y,
+			     unsigned char *img, int X, int Y,
 			     double scale, double sigma_scale, double quant,
 			     double ang_th, double log_eps, double density_th,
 			     int n_bins, int **reg_img, int *reg_x, int *reg_y)
 {
-	image_double image;
+	struct image_char_s *image, *scaled_image;
 	ntuple_list out = new_ntuple_list(7);
 	double *return_value;
-	image_double scaled_image, angles, modgrad;
+	image_double angles, modgrad;
 	image_char used;
 	image_int region = NULL;
 	struct coorlist *list_p;
@@ -2023,15 +2025,16 @@ double *LineSegmentDetection(int *n_out,
 	rho = quant / sin(prec);	/* gradient magnitude threshold */
 
 	/* load and scale image (if necessary) and compute angle at each pixel */
-	image = new_image_double_ptr((unsigned int)X, (unsigned int)Y, img);
+	image = new_image_char_ptr((unsigned int)X, (unsigned int)Y, img);
 	if (scale != 1.0) {
 		scaled_image = gaussian_sampler(image, scale, sigma_scale);
 		angles = ll_angle(scaled_image, rho, &list_p, &mem_p,
 				  &modgrad, (unsigned int)n_bins);
-		free_image_double(scaled_image);
-	} else
+		free_image_char(scaled_image);
+	} else {
 		angles = ll_angle(image, rho, &list_p, &mem_p, &modgrad,
 				  (unsigned int)n_bins);
+	}
 	xsize = angles->xsize;
 	ysize = angles->ysize;
 
@@ -2177,7 +2180,7 @@ double *LineSegmentDetection(int *n_out,
 /** LSD Simple Interface with Scale and Region output.
  */
 double *lsd_scale_region(int *n_out,
-			 double *img, int X, int Y, double scale,
+			 unsigned char *img, int X, int Y, double scale,
 			 int **reg_img, int *reg_x, int *reg_y)
 {
 	/* LSD parameters */
@@ -2199,7 +2202,7 @@ double *lsd_scale_region(int *n_out,
 /*----------------------------------------------------------------------------*/
 /** LSD Simple Interface with Scale.
  */
-double *lsd_scale(int *n_out, double *img, int X, int Y, double scale)
+double *lsd_scale(int *n_out, unsigned char *img, int X, int Y, double scale)
 {
 	return lsd_scale_region(n_out, img, X, Y, scale, NULL, NULL, NULL);
 }
@@ -2207,7 +2210,7 @@ double *lsd_scale(int *n_out, double *img, int X, int Y, double scale)
 /*----------------------------------------------------------------------------*/
 /** LSD Simple Interface.
  */
-double *lsd(int *n_out, double *img, int X, int Y)
+double *lsd(int *n_out, unsigned char *img, int X, int Y)
 {
 	/* LSD parameters */
 	double scale = 0.8;	/* Scale the image by Gaussian filter to 'scale'. */

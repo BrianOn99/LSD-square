@@ -139,7 +139,7 @@
                        'out[7*n+0]' to 'out[7*n+6]'.
  */
 double * LineSegmentDetection( int * n_out,
-                               double * img, int X, int Y,
+                               unsigned char * img, int X, int Y,
                                double scale, double sigma_scale, double quant,
                                double ang_th, double log_eps, double density_th,
                                int n_bins,
@@ -207,7 +207,7 @@ double * LineSegmentDetection( int * n_out,
                        'out[7*n+0]' to 'out[7*n+6]'.
  */
 double * lsd_scale_region( int * n_out,
-                           double * img, int X, int Y, double scale,
+                           unsigned char * img, int X, int Y, double scale,
                            int ** reg_img, int * reg_x, int * reg_y );
 
 /*----------------------------------------------------------------------------*/
@@ -247,7 +247,7 @@ double * lsd_scale_region( int * n_out,
                        line segment number 'n+1' are obtained with
                        'out[7*n+0]' to 'out[7*n+6]'.
  */
-double * lsd_scale(int * n_out, double * img, int X, int Y, double scale);
+double * lsd_scale(int * n_out, unsigned char * img, int X, int Y, double scale);
 
 /*----------------------------------------------------------------------------*/
 /** LSD Simple Interface
@@ -278,7 +278,7 @@ double * lsd_scale(int * n_out, double * img, int X, int Y, double scale);
                        line segment number 'n+1' are obtained with
                        'out[7*n+0]' to 'out[7*n+6]'.
  */
-double * lsd(int * n_out, double * img, int X, int Y);
+double * lsd(int * n_out, unsigned char * img, int X, int Y);
 
 #endif /* !LSD_HEADER */
 /*----------------------------------------------------------------------------*/
