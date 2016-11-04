@@ -36,6 +36,9 @@ doc: lsd.c lsd.h doxygen.config
 debug: CFLAGS += -DDEBUG
 debug: lsd_cmd
 
+valgrind_check: lsd_cmd
+	valgrind --leak-check=yes ./lsd_cmd -C -P valgrind_tmp.eps chairs.pgm /dev/null
+
 .PHONY: clean
 
 clean:

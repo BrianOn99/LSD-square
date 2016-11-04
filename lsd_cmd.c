@@ -1195,7 +1195,7 @@ int main(int argc, char **argv)
 		} else {
 			printf("No square found\n");
 		}
-		return 0;
+		goto main_clean_up;
 	}
 
 	/* execute LSD */
@@ -1242,8 +1242,9 @@ int main(int argc, char **argv)
 			  get_double(arg, "width"));
 
 	/* free memory */
-	free((void *)image);
 	free((void *)segs);
+main_clean_up:
+	free((void *)image);
 	free_arguments(arg);
 
 	return EXIT_SUCCESS;

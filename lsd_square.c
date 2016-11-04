@@ -313,5 +313,6 @@ int find_square_corner_bitmap(struct point_d res_pt[4], double *image, int X, in
 	join_lines(n, joined_lines, segs, &m, X/8);
 	int is_success = find_square_corner(res_pt, joined_lines, m, X, Y);
 	free(joined_lines);
+	free(segs);
 	return is_success;
 }
