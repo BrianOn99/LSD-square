@@ -1243,9 +1243,17 @@ int main(int argc, char **argv)
 	double *segs;
 	int n;
 	int dim = 7;
-	int *region;
-	int regX, regY;
 	int i, j;
+	struct lsd_param my_lsd_param = {
+		get_double(arg, "scale"),
+		get_double(arg, "sigma_coef"),
+		get_double(arg, "quant"),
+		get_double(arg, "ang_th"),
+		get_double(arg, "log_eps"),
+		get_double(arg, "density_th"),
+		get_int(arg, "n_bins"),
+	};
+	struct lsd_reg my_reg;
 
 	/* read input file */
 	image = read_pgm_image_char(&X, &Y, get_str(arg, "in"));
@@ -1265,15 +1273,8 @@ int main(int argc, char **argv)
 
 	/* execute LSD */
 	segs = LineSegmentDetection(&n, image, X, Y,
-				    get_double(arg, "scale"),
-				    get_double(arg, "sigma_coef"),
-				    get_double(arg, "quant"),
-				    get_double(arg, "ang_th"),
-				    get_double(arg, "log_eps"),
-				    get_double(arg, "density_th"),
-				    get_int(arg, "n_bins"),
-				    is_assigned(arg, "reg") ? &region : NULL,
-				    &regX, &regY);
+					&my_lsd_param,
+					is_assigned(arg, "reg") ? &my_reg : NULL);
 
 	/* output */
 	if (strcmp(get_str(arg, "out"), "-") == 0)
@@ -1292,8 +1293,9 @@ int main(int argc, char **argv)
 
 	/* store region output if needed */
 	if (is_assigned(arg, "reg")) {
-		write_pgm_image_int(region, regX, regY, get_str(arg, "reg"));
-		free((void *)region);
+		write_pgm_image_int(my_reg.reg_img , my_reg.reg_x, my_reg.reg_y,
+				get_str(arg, "reg"));
+		free(my_reg.reg_img);
 	}
 
 	/* create EPS output if needed */
@@ -1314,5 +1316,3 @@ main_clean_up:
 
 	return EXIT_SUCCESS;
 }
-
-/*----------------------------------------------------------------------------*/

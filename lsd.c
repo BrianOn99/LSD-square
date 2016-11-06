@@ -1982,11 +1982,8 @@ static int refine(struct point *reg, int *reg_size, image_double modgrad,
 /*----------------------------------------------------------------------------*/
 /** LSD full interface.
  */
-double *LineSegmentDetection(int *n_out,
-			     unsigned char *img, int X, int Y,
-			     double scale, double sigma_scale, double quant,
-			     double ang_th, double log_eps, double density_th,
-			     int n_bins, int **reg_img, int *reg_x, int *reg_y)
+double * LineSegmentDetection(int *n_out, unsigned char *img, int X, int Y,
+                              struct lsd_param *param, struct lsd_reg *reg_output)
 {
 	struct image_char_s *image, *scaled_image;
 	ntuple_list out = new_ntuple_list(7);
@@ -2006,34 +2003,34 @@ double *LineSegmentDetection(int *n_out,
 	/* check parameters */
 	if (img == NULL || X <= 0 || Y <= 0)
 		error("invalid image input.");
-	if (scale <= 0.0)
+	if (param->scale <= 0.0)
 		error("'scale' value must be positive.");
-	if (sigma_scale <= 0.0)
+	if (param->sigma_scale <= 0.0)
 		error("'sigma_scale' value must be positive.");
-	if (quant < 0.0)
+	if (param->quant < 0.0)
 		error("'quant' value must be positive.");
-	if (ang_th <= 0.0 || ang_th >= 180.0)
+	if (param->ang_th <= 0.0 || param->ang_th >= 180.0)
 		error("'ang_th' value must be in the range (0,180).");
-	if (density_th < 0.0 || density_th > 1.0)
+	if (param->density_th < 0.0 || param->density_th > 1.0)
 		error("'density_th' value must be in the range [0,1].");
-	if (n_bins <= 0)
+	if (param->n_bins <= 0)
 		error("'n_bins' value must be positive.");
 
 	/* angle tolerance */
-	prec = M_PI * ang_th / 180.0;
-	p = ang_th / 180.0;
-	rho = quant / sin(prec);	/* gradient magnitude threshold */
+	prec = M_PI * param->ang_th / 180.0;
+	p = param->ang_th / 180.0;
+	rho = param->quant / sin(prec);	/* gradient magnitude threshold */
 
 	/* load and scale image (if necessary) and compute angle at each pixel */
 	image = new_image_char_ptr((unsigned int)X, (unsigned int)Y, img);
-	if (scale != 1.0) {
-		scaled_image = gaussian_sampler(image, scale, sigma_scale);
+	if (param->scale != 1.0) {
+		scaled_image = gaussian_sampler(image, param->scale, param->sigma_scale);
 		angles = ll_angle(scaled_image, rho, &list_p, &mem_p,
-				  &modgrad, (unsigned int)n_bins);
+				  &modgrad, (unsigned int)param->n_bins);
 		free_image_char(scaled_image);
 	} else {
 		angles = ll_angle(image, rho, &list_p, &mem_p, &modgrad,
-				  (unsigned int)n_bins);
+				  (unsigned int)param->n_bins);
 	}
 	xsize = angles->xsize;
 	ysize = angles->ysize;
@@ -2057,7 +2054,7 @@ double *LineSegmentDetection(int *n_out,
 							   that can give a meaningful event */
 
 	/* initialize some structures */
-	if (reg_img != NULL && reg_x != NULL && reg_y != NULL)	/* save region data */
+	if (reg_output != NULL)	/* save region data */
 		region = new_image_int_ini(angles->xsize, angles->ysize, 0);
 	used = new_image_char_ini(xsize, ysize, NOTUSED);
 	reg =
@@ -2096,12 +2093,12 @@ double *LineSegmentDetection(int *n_out,
 			   The original algorithm is obtained with density_th = 0.0.
 			 */
 			if (!refine(reg, &reg_size, modgrad, reg_angle,
-				    prec, p, &rec, used, angles, density_th))
+				    prec, p, &rec, used, angles, param->density_th))
 				continue;
 
 			/* compute NFA value */
-			log_nfa = rect_improve(&rec, angles, logNT, log_eps);
-			if (log_nfa <= log_eps)
+			log_nfa = rect_improve(&rec, angles, logNT, param->log_eps);
+			if (log_nfa <= param->log_eps)
 				continue;
 
 			/* A New Line Segment was found! */
@@ -2118,12 +2115,12 @@ double *LineSegmentDetection(int *n_out,
 			rec.y2 += 0.5;
 
 			/* scale the result values if a subsampling was performed */
-			if (scale != 1.0) {
-				rec.x1 /= scale;
-				rec.y1 /= scale;
-				rec.x2 /= scale;
-				rec.y2 /= scale;
-				rec.width /= scale;
+			if (param->scale != 1.0) {
+				rec.x1 /= param->scale;
+				rec.y1 /= param->scale;
+				rec.x2 /= param->scale;
+				rec.y2 /= param->scale;
+				rec.width /= param->scale;
 			}
 
 			/* add line segment found to output */
@@ -2149,15 +2146,13 @@ double *LineSegmentDetection(int *n_out,
 	free((void *)mem_p);
 
 	/* return the result */
-	if (reg_img != NULL && reg_x != NULL && reg_y != NULL) {
-		if (region == NULL)
-			error("'region' should be a valid image.");
-		*reg_img = region->data;
+	if (reg_output != NULL) {
+		reg_output->reg_img = region->data;
 		if (region->xsize > (unsigned int)INT_MAX ||
 		    region->xsize > (unsigned int)INT_MAX)
 			error("region image to big to fit in INT sizes.");
-		*reg_x = (int)(region->xsize);
-		*reg_y = (int)(region->ysize);
+		reg_output->reg_x = (int)(region->xsize);
+		reg_output->reg_y = (int)(region->ysize);
 
 		/* free the 'region' structure.
 		   we cannot use the function 'free_image_int' because we need to keep
@@ -2176,27 +2171,19 @@ double *LineSegmentDetection(int *n_out,
 	return return_value;
 }
 
-/*----------------------------------------------------------------------------*/
-/** LSD Simple Interface with Scale and Region output.
- */
-double *lsd_scale_region(int *n_out,
-			 unsigned char *img, int X, int Y, double scale,
-			 int **reg_img, int *reg_x, int *reg_y)
+void make_lsd_default_param(struct lsd_param *param)
 {
 	/* LSD parameters */
-	double sigma_scale = 0.6;	/* Sigma for Gaussian filter is computed as
+	param->scale = 0.8;	/* Scale the image by Gaussian filter to 'scale'. */
+	param->sigma_scale = 0.6;	/* Sigma for Gaussian filter is computed as
 					   sigma = sigma_scale/scale.                    */
-	double quant = 2.0;	/* Bound to the quantization error on the
+	param->quant = 2.0;	/* Bound to the quantization error on the
 				   gradient norm.                                */
-	double ang_th = 22.5;	/* Gradient angle tolerance in degrees.           */
-	double log_eps = 0.0;	/* Detection threshold: -log10(NFA) > log_eps     */
-	double density_th = 0.7;	/* Minimal density of region points in rectangle. */
-	int n_bins = 1024;	/* Number of bins in pseudo-ordering of gradient
+	param->ang_th = 22.5;	/* Gradient angle tolerance in degrees.           */
+	param->log_eps = 0.0;	/* Detection threshold: -log10(NFA) > log_eps     */
+	param->density_th = 0.7;	/* Minimal density of region points in rectangle. */
+	param->n_bins = 1024;	/* Number of bins in pseudo-ordering of gradient
 				   modulus.                                       */
-
-	return LineSegmentDetection(n_out, img, X, Y, scale, sigma_scale, quant,
-				    ang_th, log_eps, density_th, n_bins,
-				    reg_img, reg_x, reg_y);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -2204,7 +2191,10 @@ double *lsd_scale_region(int *n_out,
  */
 double *lsd_scale(int *n_out, unsigned char *img, int X, int Y, double scale)
 {
-	return lsd_scale_region(n_out, img, X, Y, scale, NULL, NULL, NULL);
+	struct lsd_param param;
+	make_lsd_default_param(&param);
+	param.scale = scale;
+	return LineSegmentDetection(n_out, img, X, Y, &param, NULL);
 }
 
 /*----------------------------------------------------------------------------*/
@@ -2212,9 +2202,7 @@ double *lsd_scale(int *n_out, unsigned char *img, int X, int Y, double scale)
  */
 double *lsd(int *n_out, unsigned char *img, int X, int Y)
 {
-	/* LSD parameters */
-	double scale = 0.8;	/* Scale the image by Gaussian filter to 'scale'. */
-
+	double scale = 0.8;
 	return lsd_scale(n_out, img, X, Y, scale);
 }
 

@@ -37,7 +37,7 @@ debug: CFLAGS += -DDEBUG
 debug: lsd_cmd
 
 valgrind_check: lsd_cmd
-	valgrind --leak-check=yes ./lsd_cmd -C -P valgrind_tmp.eps chairs.pgm /dev/null
+	valgrind --leak-check=yes ./lsd_cmd -C -P valgrind_tmp.eps chairs.pgm /dev/null ; rm valgrind_tmp.eps
 
 .PHONY: clean
 

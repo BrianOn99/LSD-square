@@ -185,11 +185,11 @@ enum line_class classify_line(struct line *l, int img_x, int img_y)
 	if (fabs(dot_prod) > COS_1_OVER_8_PI) {
 		/* horizontal */
 		double y_center = (l->y1 + l->y2) / 2;
-		if (y_center > img_y * 3/5) {
+		if (y_center > img_y * 1/2) {
 			if  (l->x1 > l->x2)
 				reverse_line(l);
 			return TOP;
-		} else if (y_center < img_y * 2/5) {
+		} else if (y_center < img_y * 1/2) {
 			if  (l->x2 > l->x1)
 				reverse_line(l);
 			return BOTTOM;
@@ -197,11 +197,11 @@ enum line_class classify_line(struct line *l, int img_x, int img_y)
 	} else if (fabs(dot_prod) < COS_3_OVER_8_PI) {
 		/* vertical */
 		double x_center = (l->x1 + l->x2) / 2;
-		if (x_center > img_x * 3/5) {
+		if (x_center > img_x * 1/2) {
 			if  (l->y2 > l->y1)
 				reverse_line(l);
 			return RIGHT;
-		} else if (x_center < img_x * 2/5) {
+		} else if (x_center < img_x * 1/2) {
 			if  (l->y1 > l->y2)
 				reverse_line(l);
 			return LEFT;
@@ -307,8 +307,13 @@ int find_square_corner_bitmap(struct point_d res_pt[4], unsigned char *image, in
 	int n;
 	unsigned m;
 	struct line *joined_lines;
+	struct lsd_param param;
 
-	double *segs = lsd(&n, image, X, Y);
+	make_lsd_default_param(&param);
+	param.scale = 1.0;   /* It's the caller's reponsibility to scaled down the image */
+	param.ang_th = 28;   /* allow a relatively big angle deviation to detect faint edge */
+	param.quant = 1.5;   /* small quatization value to detect faint edge, inexpense of CPU */
+	double *segs = LineSegmentDetection(&n, image, X, Y, &param, NULL);
 	joined_lines = malloc(sizeof(struct line) * n);
 	join_lines(n, joined_lines, segs, &m, X/8);
 	int is_success = find_square_corner(res_pt, joined_lines, m, X, Y);
