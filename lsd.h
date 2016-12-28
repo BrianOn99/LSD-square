@@ -36,6 +36,25 @@
 #ifndef LSD_HEADER
 #define LSD_HEADER
 
+#define BITMAP_GREY    0
+#define BITMAP_RGB    1
+
+extern unsigned int channel_num[2];
+
+/** char image data type
+
+    The pixel value at (x,y) is accessed by:
+
+      image->data[ x + y * image->xsize ]
+
+    with x and y integer.
+ */
+struct image_char {
+	unsigned char *data;
+	unsigned int xsize, ysize;
+	int color_type;
+};
+
 /*----------------------------------------------------------------------------*/
 /** LSD parameter
     @param scale       When different from 1.0, LSD will scale the input image
@@ -159,7 +178,7 @@ void make_lsd_default_param(struct lsd_param *param);
                        line segment number 'n+1' are obtained with
                        'out[7*n+0]' to 'out[7*n+6]'.
  */
-double * LineSegmentDetection(int * n_out, unsigned char * img, int X, int Y,
+double * LineSegmentDetection(int * n_out, struct image_char * img,
                               struct lsd_param *param,
                               struct lsd_reg *reg_output);
 
@@ -200,7 +219,7 @@ double * LineSegmentDetection(int * n_out, unsigned char * img, int X, int Y,
                        line segment number 'n+1' are obtained with
                        'out[7*n+0]' to 'out[7*n+6]'.
  */
-double * lsd_scale(int * n_out, unsigned char * img, int X, int Y, double scale);
+double * lsd_scale(int * n_out, struct image_char * img, double scale);
 
 
 /*----------------------------------------------------------------------------*/
@@ -232,7 +251,7 @@ double * lsd_scale(int * n_out, unsigned char * img, int X, int Y, double scale)
                        line segment number 'n+1' are obtained with
                        'out[7*n+0]' to 'out[7*n+6]'.
  */
-double * lsd(int * n_out, unsigned char * img, int X, int Y);
+double * lsd(int * n_out, struct image_char * img);
 
 #endif /* !LSD_HEADER */
 /*----------------------------------------------------------------------------*/

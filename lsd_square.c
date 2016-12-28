@@ -24,6 +24,9 @@
 #define COS_1_OVER_8_PI 0.9239
 #define COS_3_OVER_8_PI 0.3827
 
+#define SQ_SCORE_WEIGHT_LINE_GAP 1.0
+#define SQ_SCORE_WEIGHT_AREA 1.9
+
 enum line_class {TOP = 0, RIGHT, BOTTOM, LEFT, OTHERS};
 
 struct vector horizontal_vector = { .x = 1, .y = 0 };
@@ -31,7 +34,8 @@ struct vector horizontal_vector = { .x = 1, .y = 0 };
 struct classified_lines {
 	struct line *line_group[4];
 	unsigned count[4];
-	double side_len;
+	double side_len_X;
+	double side_len_Y;
 };
 
 void init_classified_lines(struct classified_lines *cl_lines, int max_count)
@@ -211,39 +215,59 @@ enum line_class classify_line(struct line *l, int img_x, int img_y)
 	return OTHERS;
 }
 
+static int square_inscribed(struct line sq_lines[4], int side_len_X, int side_len_Y)
+{
+	struct point_d point;
+	int i;
+	for (i = 0; i < 4; i++) {
+		line_intersection(&point, sq_lines+i, sq_lines+(i+1)%4);
+		if (point.x > side_len_X || point.x < 0 ||
+			point.y > side_len_Y || point.y < 0)
+			return false;
+	}
+	return true;
+}
+
 /*
  * some ad-hoc rule to score how similar the lines are to a rectangle.
  * lower is better
  * gap between lines should be small (positive score)
  * area should be large (negative score) (calculated approximately)
  */
-double score_square(struct line lines[4], int side_len)
+double score_square(struct line lines[4], int side_len_X, int side_len_Y)
 {
 	int i;
 	double approx_width, approx_height;
 	double score = 0;
+	double side_len = (side_len_X + side_len_Y) / 2;
+	if (!square_inscribed(lines, side_len_X, side_len_Y)) {
+		return INFINITY;
+	}
 	for (i = 0; i < 4; i++) {
 		struct line *l1 = &lines[i];
 		struct line *l2 = &lines[(i+1) % 4];
-		score += dist(l1->x2, l1->y2, l2->x1, l2->y1) * (4.0/side_len);
+		score += SQ_SCORE_WEIGHT_LINE_GAP *
+			dist(l1->x2, l1->y2, l2->x1, l2->y1) / side_len;
 	}
 	approx_height = ( (lines[0].y1 + lines[0].y2) - (lines[2].y1 + lines[2].y2) ) / 2;
 	approx_width = ( (lines[1].x1 + lines[1].x2) - (lines[3].x1 + lines[3].x2) ) / 2;
-	score -= sqrt(approx_height * approx_width);
+	score -= SQ_SCORE_WEIGHT_AREA * sqrt(approx_height * approx_width) / side_len;
 	return score;
 }
 
-void res_filter_best_square(struct scored_square *res, struct line test_square[4], struct classified_lines *cl_lines, int rec_level)
+static void rec_filter_best_square(struct scored_square *res,
+		struct line test_square[4], struct classified_lines *cl_lines,
+		int rec_level)
 {
 	unsigned i;
-	for (i=0; i < cl_lines->count[rec_level]; i++) {
+	for (i = 0; i < cl_lines->count[rec_level]; i++) {
 		DEBUG_PRINT("%*s recursion i=%d\n", rec_level, "", i);
 
 		test_square[rec_level] = cl_lines->line_group[rec_level][i];
 		if (rec_level != 3) {
-			res_filter_best_square(res, test_square, cl_lines, rec_level + 1);
+			rec_filter_best_square(res, test_square, cl_lines, rec_level + 1);
 		} else {
-			double score = score_square(test_square, cl_lines->side_len);
+			double score = score_square(test_square, cl_lines->side_len_X, cl_lines->side_len_Y);
 			DEBUG_PRINT("%*s score %7.5f\n", rec_level, "", score);
 
 			if (score < res->score) {
@@ -258,17 +282,18 @@ void res_filter_best_square(struct scored_square *res, struct line test_square[4
 void filter_best_square(struct scored_square *res, struct classified_lines *cl_lines)
 {
 	struct line test_square[4];
-	res_filter_best_square(res, test_square, cl_lines, 0);
+	rec_filter_best_square(res, test_square, cl_lines, 0);
 }
 
 void find_square(struct scored_square *res_square, struct line *lines, unsigned n, int X, int Y)
 {
 	unsigned i;
 	struct classified_lines cl_lines;
-	res_square->score = INT_MAX;
+	res_square->score = INFINITY;
 
 	init_classified_lines(&cl_lines, n);
-	cl_lines.side_len = X;
+	cl_lines.side_len_X = X;
+	cl_lines.side_len_Y = Y;
 
 	for (i = 0; i < n; i++) {
 		enum line_class cls = classify_line(&lines[i], X, Y);
@@ -287,7 +312,7 @@ int find_square_corner(struct point_d res_pt[4], struct line *lines, unsigned n,
 	struct line *sq_lines;
 
 	find_square(&best_square, lines, n, X, Y);
-	if (best_square.score != INT_MAX) {
+	if (best_square.score != INFINITY) {
 		sq_lines = best_square.lines;
 		line_intersection(res_pt, sq_lines, sq_lines+1);
 		line_intersection(res_pt + 1, sq_lines + 1, sq_lines + 2);
@@ -302,7 +327,7 @@ int find_square_corner(struct point_d res_pt[4], struct line *lines, unsigned n,
 /*
  * A wrapper to find_square, for bitmap input
  */
-int find_square_corner_bitmap(struct point_d res_pt[4], unsigned char *image, int X, int Y)
+int find_square_corner_bitmap(struct point_d res_pt[4], struct image_char *image, double scale)
 {
 	int n;
 	unsigned m;
@@ -310,13 +335,17 @@ int find_square_corner_bitmap(struct point_d res_pt[4], unsigned char *image, in
 	struct lsd_param param;
 
 	make_lsd_default_param(&param);
-	param.scale = 1.0;   /* It's the caller's reponsibility to scaled down the image */
+	param.scale = scale;
 	param.ang_th = 28;   /* allow a relatively big angle deviation to detect faint edge */
-	param.quant = 1.5;   /* small quatization value to detect faint edge, inexpense of CPU */
-	double *segs = LineSegmentDetection(&n, image, X, Y, &param, NULL);
+	if (image->color_type == BITMAP_RGB)
+		param.quant = 2.5;   /* larger quantizaton value for rbg, because norm is larger usually */
+	else
+		param.quant = 1.5;   /* small quatization value to detect faint edge, inexpense of CPU */
+	param.log_eps = 1.0;
+	double *segs = LineSegmentDetection(&n, image, &param, NULL);
 	joined_lines = malloc(sizeof(struct line) * n);
-	join_lines(n, joined_lines, segs, &m, X/8);
-	int is_success = find_square_corner(res_pt, joined_lines, m, X, Y);
+	join_lines(n, joined_lines, segs, &m, image->xsize/8);
+	int is_success = find_square_corner(res_pt, joined_lines, m, image->xsize, image->ysize);
 	free(joined_lines);
 	free(segs);
 	return is_success;

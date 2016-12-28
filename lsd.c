@@ -119,6 +119,8 @@
 /** Label for pixels already used in detection. */
 #define USED    1
 
+unsigned int channel_num[2] = {[BITMAP_GREY] = 1, [BITMAP_RGB] = 3};
+
 /*----------------------------------------------------------------------------*/
 /** Chained list of coordinates.
  */
@@ -272,23 +274,10 @@ static void add_7tuple(ntuple_list out, double v1, double v2, double v3,
 /*----------------------------------------------------------------------------*/
 
 /*----------------------------------------------------------------------------*/
-/** char image data type
-
-    The pixel value at (x,y) is accessed by:
-
-      image->data[ x + y * image->xsize ]
-
-    with x and y integer.
- */
-typedef struct image_char_s {
-	unsigned char *data;
-	unsigned int xsize, ysize;
-} *image_char;
-
 /*----------------------------------------------------------------------------*/
 /** Free memory used in image_char 'i'.
  */
-static void free_image_char(image_char i)
+static void free_image_char(struct image_char * i)
 {
 	if (i == NULL || i->data == NULL)
 		error("free_image_char: invalid input image.");
@@ -299,26 +288,34 @@ static void free_image_char(image_char i)
 /*----------------------------------------------------------------------------*/
 /** Create a new image_char of size 'xsize' times 'ysize'.
  */
-static image_char new_image_char(unsigned int xsize, unsigned int ysize)
+static struct image_char * new_image_char(unsigned int xsize, unsigned int ysize,
+		unsigned char *data, int color_type)
 {
-	image_char image;
-
+	struct image_char * image;
+	
 	/* check parameters */
 	if (xsize == 0 || ysize == 0)
 		error("new_image_char: invalid image size.");
 
 	/* get memory */
-	image = (image_char) malloc(sizeof(struct image_char_s));
+	image = malloc(sizeof(struct image_char));
 	if (image == NULL)
 		error("not enough memory.");
-	image->data = (unsigned char *)calloc((size_t) (xsize * ysize),
-					      sizeof(unsigned char));
+
+	if (data == NULL) 
+		image->data = (unsigned char *)calloc((size_t) (
+					xsize * ysize * channel_num[color_type]),
+					sizeof(unsigned char));
+	else
+		image->data = data;
+
 	if (image->data == NULL)
 		error("not enough memory.");
 
 	/* set image size */
 	image->xsize = xsize;
 	image->ysize = ysize;
+	image->color_type = color_type;
 
 	return image;
 }
@@ -327,10 +324,10 @@ static image_char new_image_char(unsigned int xsize, unsigned int ysize)
 /** Create a new image_char of size 'xsize' times 'ysize',
     initialized to the value 'fill_value'.
  */
-static image_char new_image_char_ini(unsigned int xsize, unsigned int ysize,
+static struct image_char * new_image_char_ini(unsigned int xsize, unsigned int ysize,
 				     unsigned char fill_value)
 {
-	image_char image = new_image_char(xsize, ysize);	/* create image */
+	struct image_char * image = new_image_char(xsize, ysize, NULL, BITMAP_GREY);	/* create image */
 	unsigned int N = xsize * ysize;
 	unsigned int i;
 
@@ -459,34 +456,6 @@ static image_double new_image_double(unsigned int xsize, unsigned int ysize)
 }
 
 /*----------------------------------------------------------------------------*/
-/** Create a new image_double of size 'xsize' times 'ysize'
-    with the data pointed by 'data'.
- */
-static struct image_char_s* new_image_char_ptr(unsigned int xsize,
-					 unsigned int ysize, unsigned char *data)
-{
-	struct image_char_s *image;
-
-	/* check parameters */
-	if (xsize == 0 || ysize == 0)
-		error("new_image_char_ptr: invalid image size.");
-	if (data == NULL)
-		error("new_image_char_ptr: NULL data pointer.");
-
-	/* get memory */
-	image = (image_char) malloc(sizeof(struct image_char_s));
-	if (image == NULL)
-		error("not enough memory.");
-
-	/* set image */
-	image->xsize = xsize;
-	image->ysize = ysize;
-	image->data = data;
-
-	return image;
-}
-
-/*----------------------------------------------------------------------------*/
 /*----------------------------- Gaussian filter ------------------------------*/
 /*----------------------------------------------------------------------------*/
 
@@ -526,71 +495,20 @@ static void gaussian_kernel(ntuple_list kernel, double sigma, double mean)
 			kernel->values[i] /= sum;
 }
 
-/*----------------------------------------------------------------------------*/
-/** Scale the input image 'in' by a factor 'scale' by Gaussian sub-sampling.
 
-    For example, scale=0.8 will give a result at 80% of the original size.
-
-    The image is convolved with a Gaussian kernel
-    @f[
-        G(x,y) = \frac{1}{2\pi\sigma^2} e^{-\frac{x^2+y^2}{2\sigma^2}}
-    @f]
-    before the sub-sampling to prevent aliasing.
-
-    The standard deviation sigma given by:
-    -  sigma = sigma_scale / scale,   if scale <  1.0
-    -  sigma = sigma_scale,           if scale >= 1.0
-
-    To be able to sub-sample at non-integer steps, some interpolation
-    is needed. In this implementation, the interpolation is done by
-    the Gaussian kernel, so both operations (filtering and sampling)
-    are done at the same time. The Gaussian kernel is computed
-    centered on the coordinates of the required sample. In this way,
-    when applied, it gives directly the result of convolving the image
-    with the kernel and interpolated to that particular position.
-
-    A fast algorithm is done using the separability of the Gaussian
-    kernel. Applying the 2D Gaussian kernel is equivalent to applying
-    first a horizontal 1D Gaussian kernel and then a vertical 1D
-    Gaussian kernel (or the other way round). The reason is that
-    @f[
-        G(x,y) = G(x) * G(y)
-    @f]
-    where
-    @f[
-        G(x) = \frac{1}{\sqrt{2\pi}\sigma} e^{-\frac{x^2}{2\sigma^2}}.
-    @f]
-    The algorithm first applies a combined Gaussian kernel and sampling
-    in the x axis, and then the combined Gaussian kernel and sampling
-    in the y axis.
- */
-static struct image_char_s* gaussian_sampler(struct image_char_s *in, double scale,
-				     double sigma_scale)
+static void one_channel_gaussian_sampler(
+		struct image_char *in, struct image_char *out,
+		double scale, double sigma_scale, int channel)
 {
-	struct image_char_s *aux, *out;
+	struct image_char *aux;
 	ntuple_list kernel;
-	unsigned int N, M, h, n, x, y, i;
-	int xc, yc, j, double_x_size, double_y_size;
+	unsigned int h, n, x, y, i;
 	double sigma, xx, yy, sum, prec;
+	int xc, yc, j, double_x_size, double_y_size;
+	unsigned char *in_data = in->data + in->xsize * in->ysize * channel;
+	unsigned char *out_data = out->data + out->xsize * out->ysize * channel;
 
-	/* check parameters */
-	if (in == NULL || in->data == NULL || in->xsize == 0 || in->ysize == 0)
-		error("gaussian_sampler: invalid image.");
-	if (scale <= 0.0)
-		error("gaussian_sampler: 'scale' must be positive.");
-	if (sigma_scale <= 0.0)
-		error("gaussian_sampler: 'sigma_scale' must be positive.");
-
-	/* compute new image size and get memory for images */
-	if (in->xsize * scale > (double)UINT_MAX ||
-	    in->ysize * scale > (double)UINT_MAX)
-		error
-		    ("gaussian_sampler: the output image size exceeds the handled size.");
-	N = (unsigned int)ceil(in->xsize * scale);
-	M = (unsigned int)ceil(in->ysize * scale);
-	aux = new_image_char(N, in->ysize);
-	out = new_image_char(N, M);
-
+	aux = new_image_char(out->xsize, in->ysize, NULL, BITMAP_GREY);
 	/* sigma, kernel size and memory for the kernel */
 	sigma = scale < 1.0 ? sigma_scale / scale : sigma_scale;
 	/*
@@ -638,7 +556,7 @@ static struct image_char_s* gaussian_sampler(struct image_char_s *in, double sca
 				if (j >= (int)in->xsize)
 					j = double_x_size - 1 - j;
 
-				sum += in->data[j + y * in->xsize] 
+				sum += in_data[j + y * in->xsize] 
 					    * kernel->values[i];
 			}
 			aux->data[x + y * aux->xsize] = sum;
@@ -678,20 +596,130 @@ static struct image_char_s* gaussian_sampler(struct image_char_s *in, double sca
 					      j * aux->xsize] *
 				    kernel->values[i];
 			}
-			out->data[x + y * out->xsize] = sum;
+			out_data[x + y * out->xsize] = sum;
 		}
 	}
 
 	/* free memory */
 	free_ntuple_list(kernel);
 	free_image_char(aux);
+}
+/*----------------------------------------------------------------------------*/
+/** Scale the input image 'in' by a factor 'scale' by Gaussian sub-sampling.
+
+    For example, scale=0.8 will give a result at 80% of the original size.
+
+    The image is convolved with a Gaussian kernel
+    @f[
+        G(x,y) = \frac{1}{2\pi\sigma^2} e^{-\frac{x^2+y^2}{2\sigma^2}}
+    @f]
+    before the sub-sampling to prevent aliasing.
+
+    The standard deviation sigma given by:
+    -  sigma = sigma_scale / scale,   if scale <  1.0
+    -  sigma = sigma_scale,           if scale >= 1.0
+
+    To be able to sub-sample at non-integer steps, some interpolation
+    is needed. In this implementation, the interpolation is done by
+    the Gaussian kernel, so both operations (filtering and sampling)
+    are done at the same time. The Gaussian kernel is computed
+    centered on the coordinates of the required sample. In this way,
+    when applied, it gives directly the result of convolving the image
+    with the kernel and interpolated to that particular position.
+
+    A fast algorithm is done using the separability of the Gaussian
+    kernel. Applying the 2D Gaussian kernel is equivalent to applying
+    first a horizontal 1D Gaussian kernel and then a vertical 1D
+    Gaussian kernel (or the other way round). The reason is that
+    @f[
+        G(x,y) = G(x) * G(y)
+    @f]
+    where
+    @f[
+        G(x) = \frac{1}{\sqrt{2\pi}\sigma} e^{-\frac{x^2}{2\sigma^2}}.
+    @f]
+    The algorithm first applies a combined Gaussian kernel and sampling
+    in the x axis, and then the combined Gaussian kernel and sampling
+    in the y axis.
+ */
+static struct image_char* gaussian_sampler(struct image_char *in, double scale,
+				     double sigma_scale)
+{
+	struct image_char *out;
+	unsigned int N, M, i;
+
+	/* check parameters */
+	if (in == NULL || in->data == NULL || in->xsize == 0 || in->ysize == 0)
+		error("gaussian_sampler: invalid image.");
+	if (scale <= 0.0)
+		error("gaussian_sampler: 'scale' must be positive.");
+	if (sigma_scale <= 0.0)
+		error("gaussian_sampler: 'sigma_scale' must be positive.");
+
+	/* compute new image size and get memory for images */
+	if (in->xsize * scale > (double)UINT_MAX ||
+	    in->ysize * scale > (double)UINT_MAX)
+		error("gaussian_sampler: the output image size exceeds the handled size.");
+	N = (unsigned int)ceil(in->xsize * scale);
+	M = (unsigned int)ceil(in->ysize * scale);
+	out = new_image_char(N, M, NULL, in->color_type);
+	printf("processing %d channel", channel_num[in->color_type]);
+	for (i = 0; i < channel_num[in->color_type]; i++)
+		one_channel_gaussian_sampler(in, out, scale, sigma_scale, i);
 
 	return out;
 }
 
+
 /*----------------------------------------------------------------------------*/
 /*--------------------------------- Gradient ---------------------------------*/
 /*----------------------------------------------------------------------------*/
+
+/*
+  Norm 2 computation using 2x2 pixel window:
+  A B
+  C D
+  and
+  com1 = D-A,  com2 = B-C.
+  Then
+  gx = B+D - (A+C)   horizontal difference
+  gy = C+D - (A+B)   vertical difference
+  com1 and com2 are just to avoid 2 additions.
+*/
+static void gradient2by2_grey(struct image_char *in, int x, int y, double *gx, double *gy) {
+	double com1, com2;
+
+	int adr = y * in->xsize + x;
+
+	com1 = in->data[adr + in->xsize + 1] - in->data[adr];
+	com2 = in->data[adr + 1] - in->data[adr + in->xsize];
+
+	*gx = (com1 + com2) / 2;	/* gradient x component */
+	*gy = (com1 - com2) / 2;	/* gradient y component */
+}
+
+static void gradient2by2_rgb(struct image_char *in, int x, int y, double *gx, double *gy) {
+	unsigned int i;
+	double gx_i, gy_i;
+	double com1, com2;
+
+	*gx = 0; *gy = 0;
+	for (i = 0; i < channel_num[BITMAP_RGB]; i++) {
+		int adr = (in->xsize * in->ysize) * i + y * in->xsize + x;
+		com1 = in->data[adr + in->xsize + 1] - in->data[adr];
+		com2 = in->data[adr + 1] - in->data[adr + in->xsize];
+
+		gx_i = 0.333 * (com1 + com2) / 2;	/* gradient x component */
+		gy_i = 0.333 * (com1 - com2) / 2;	/* gradient y component */
+		if (i!=0 && (*gx * gx_i + *gy * gy_i) < 0) {
+			gx_i = -gx_i;
+			gy_i = -gy_i;
+		}
+
+		*gx += gx_i;
+		*gy += gy_i;
+	}
+}
 
 /*----------------------------------------------------------------------------*/
 /** Computes the direction of the level line of 'in' at each point.
@@ -710,13 +738,13 @@ static struct image_char_s* gaussian_sampler(struct image_char_s *in, double sca
     - a pointer 'mem_p' to the memory used by 'list_p' to be able to
       free the memory when it is not used anymore.
  */
-static image_double ll_angle(image_char in, double threshold,
+static image_double ll_angle(struct image_char * in, double threshold,
 			     struct coorlist **list_p, void **mem_p,
 			     image_double * modgrad, unsigned int n_bins)
 {
 	image_double g;
 	unsigned int n, p, x, y, adr, i;
-	double com1, com2, gx, gy, norm, norm2;
+	double gx, gy, norm;
 	/* the rest of the variables are used for pseudo-ordering
 	   the gradient magnitude values */
 	int list_count = 0;
@@ -726,6 +754,7 @@ static image_double ll_angle(image_char in, double threshold,
 	struct coorlist *start;
 	struct coorlist *end;
 	double max_grad = 0.0;
+	void (*gradient)(struct image_char*, int, int, double*, double*);
 
 	/* check parameters */
 	if (in == NULL || in->data == NULL || in->xsize == 0 || in->ysize == 0)
@@ -752,8 +781,7 @@ static image_double ll_angle(image_char in, double threshold,
 	*modgrad = new_image_double(in->xsize, in->ysize);
 
 	/* get memory for "ordered" list of pixels */
-	list =
-	    (struct coorlist *)calloc((size_t) (n * p),
+	list = (struct coorlist *)calloc((size_t) (n * p),
 				      sizeof(struct coorlist));
 	*mem_p = (void *)list;
 	range_l_s = (struct coorlist **)calloc((size_t) n_bins,
@@ -771,30 +799,18 @@ static image_double ll_angle(image_char in, double threshold,
 	for (y = 0; y < n; y++)
 		g->data[p * y + p - 1] = NOTDEF;
 
+	if (in->color_type == BITMAP_RGB)
+		gradient = gradient2by2_rgb;
+	else
+		gradient = gradient2by2_grey;
+
 	/* compute gradient on the remaining pixels */
 	for (x = 0; x < p - 1; x++)
 		for (y = 0; y < n - 1; y++) {
 			adr = y * p + x;
 
-			/*
-			   Norm 2 computation using 2x2 pixel window:
-			   A B
-			   C D
-			   and
-			   com1 = D-A,  com2 = B-C.
-			   Then
-			   gx = B+D - (A+C)   horizontal difference
-			   gy = C+D - (A+B)   vertical difference
-			   com1 and com2 are just to avoid 2 additions.
-			 */
-			com1 = in->data[adr + p + 1] - in->data[adr];
-			com2 = in->data[adr + 1] - in->data[adr + p];
-
-			gx = com1 + com2;	/* gradient x component */
-			gy = com1 - com2;	/* gradient y component */
-			norm2 = gx * gx + gy * gy;
-			norm = sqrt(norm2 / 4.0);	/* gradient norm */
-
+			gradient(in, x, y, &gx, &gy);
+			norm = sqrt(gx*gx + gy*gy);	/* gradient norm */
 			(*modgrad)->data[adr] = norm;	/* store gradient norm */
 
 			if (norm <= threshold)	/* norm too small, gradient no defined */
@@ -1648,7 +1664,7 @@ static void region2rect(struct point *reg, int reg_size,
     tolerance 'prec', starting at point (x,y).
  */
 static void region_grow(int x, int y, image_double angles, struct point *reg,
-			int *reg_size, double *reg_angle, image_char used,
+			int *reg_size, double *reg_angle, struct image_char * used,
 			double prec)
 {
 	double sumdx, sumdy;
@@ -1817,7 +1833,7 @@ static double rect_improve(struct rect *rec, image_double angles,
 static int reduce_region_radius(struct point *reg, int *reg_size,
 				image_double modgrad, double reg_angle,
 				double prec, double p, struct rect *rec,
-				image_char used, image_double angles,
+				struct image_char * used, image_double angles,
 				double density_th)
 {
 	double density, rad1, rad2, rad, xc, yc;
@@ -1899,7 +1915,7 @@ static int reduce_region_radius(struct point *reg, int *reg_size,
  */
 static int refine(struct point *reg, int *reg_size, image_double modgrad,
 		  double reg_angle, double prec, double p, struct rect *rec,
-		  image_char used, image_double angles, double density_th)
+		  struct image_char * used, image_double angles, double density_th)
 {
 	double angle, ang_d, mean_angle, tau, density, xc, yc, ang_c, sum,
 	    s_sum;
@@ -1982,14 +1998,14 @@ static int refine(struct point *reg, int *reg_size, image_double modgrad,
 /*----------------------------------------------------------------------------*/
 /** LSD full interface.
  */
-double * LineSegmentDetection(int *n_out, unsigned char *img, int X, int Y,
+double * LineSegmentDetection(int *n_out, struct image_char *image,
                               struct lsd_param *param, struct lsd_reg *reg_output)
 {
-	struct image_char_s *image, *scaled_image;
+	struct image_char *scaled_image;
 	ntuple_list out = new_ntuple_list(7);
 	double *return_value;
 	image_double angles, modgrad;
-	image_char used;
+	struct image_char * used;
 	image_int region = NULL;
 	struct coorlist *list_p;
 	void *mem_p;
@@ -2001,8 +2017,6 @@ double * LineSegmentDetection(int *n_out, unsigned char *img, int X, int Y,
 	int ls_count = 0;	/* line segments are numbered 1,2,3,... */
 
 	/* check parameters */
-	if (img == NULL || X <= 0 || Y <= 0)
-		error("invalid image input.");
 	if (param->scale <= 0.0)
 		error("'scale' value must be positive.");
 	if (param->sigma_scale <= 0.0)
@@ -2022,7 +2036,6 @@ double * LineSegmentDetection(int *n_out, unsigned char *img, int X, int Y,
 	rho = param->quant / sin(prec);	/* gradient magnitude threshold */
 
 	/* load and scale image (if necessary) and compute angle at each pixel */
-	image = new_image_char_ptr((unsigned int)X, (unsigned int)Y, img);
 	if (param->scale != 1.0) {
 		scaled_image = gaussian_sampler(image, param->scale, param->sigma_scale);
 		angles = ll_angle(scaled_image, rho, &list_p, &mem_p,
@@ -2136,9 +2149,6 @@ double * LineSegmentDetection(int *n_out, unsigned char *img, int X, int Y,
 		}
 
 	/* free memory */
-	free((void *)image);	/* only the double_image structure should be freed,
-				   the data pointer was provided to this functions
-				   and should not be destroyed.                 */
 	free_image_double(angles);
 	free_image_double(modgrad);
 	free_image_char(used);
@@ -2189,21 +2199,21 @@ void make_lsd_default_param(struct lsd_param *param)
 /*----------------------------------------------------------------------------*/
 /** LSD Simple Interface with Scale.
  */
-double *lsd_scale(int *n_out, unsigned char *img, int X, int Y, double scale)
+double *lsd_scale(int *n_out, struct image_char *img, double scale)
 {
 	struct lsd_param param;
 	make_lsd_default_param(&param);
 	param.scale = scale;
-	return LineSegmentDetection(n_out, img, X, Y, &param, NULL);
+	return LineSegmentDetection(n_out, img, &param, NULL);
 }
 
 /*----------------------------------------------------------------------------*/
 /** LSD Simple Interface.
  */
-double *lsd(int *n_out, unsigned char *img, int X, int Y)
+double *lsd(int *n_out, struct image_char *img)
 {
 	double scale = 0.8;
-	return lsd_scale(n_out, img, X, Y, scale);
+	return lsd_scale(n_out, img, scale);
 }
 
 /*----------------------------------------------------------------------------*/

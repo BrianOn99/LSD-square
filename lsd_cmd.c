@@ -961,12 +961,12 @@ static double *read_pgm_image_double(int *X, int *Y, char *name)
 }
 #endif
 
-static unsigned char *read_pgm_image_char(int *X, int *Y, char *name)
+static void read_pgm_image_char(char *name, struct image_char *img)
 {
 	FILE *f;
-	int c, bin;
+	unsigned int c, bin, color, ch;
 	int xsize, ysize, depth, x, y;
-	unsigned char *image;
+	unsigned char *data;
 
 	/* open file */
 	if (strcmp(name, "-") == 0)
@@ -979,12 +979,20 @@ static unsigned char *read_pgm_image_char(int *X, int *Y, char *name)
 	/* read header */
 	if (getc(f) != 'P')
 		error("Error: not a PGM file!");
-	if ((c = getc(f)) == '2')
-		bin = FALSE;
-	else if (c == '5')
-		bin = TRUE;
+	c = getc(f);
+
+	if (c == '2' || c == '5')
+		color = BITMAP_GREY;
+	else if (c == '3' || c == '6')
+		color = BITMAP_RGB;
 	else
 		error("Error: not a PGM file!");
+
+	if (c <= '3')
+		bin = FALSE;
+	else
+		bin = TRUE;
+
 	skip_whites_and_comments(f);
 	xsize = get_num(f);	/* X size */
 	if (xsize <= 0)
@@ -998,29 +1006,32 @@ static unsigned char *read_pgm_image_char(int *X, int *Y, char *name)
 	if (depth <= 0)
 		fprintf(stderr,
 			"Warning: depth<=0, probably invalid PGM file\n");
+
 	/* white before data */
 	if (!isspace(c = getc(f)))
 		error("Error: corrupted PGM file.");
 
 	/* get memory */
-	image = (unsigned char *)calloc((size_t) (xsize * ysize), sizeof(unsigned char));
-	if (image == NULL)
+	data = calloc((size_t) (xsize * ysize) * channel_num[color],
+			sizeof(unsigned char));
+
+	if (data == NULL)
 		error("Error: not enough memory.");
 
 	/* read data */
 	for (y = 0; y < ysize; y++)
 		for (x = 0; x < xsize; x++)
-			image[x + y * xsize] = bin ? getc(f)
-			    : get_num(f);
+			for (ch = 0; ch < channel_num[color]; ch++)
+				data[x + y * xsize + xsize * ysize * ch] = bin ? getc(f) : get_num(f);
 
 	/* close file if needed */
 	if (f != stdin && fclose(f) == EOF)
 		error("Error: unable to close file while reading PGM file.");
 
-	/* return image */
-	*X = xsize;
-	*Y = ysize;
-	return image;
+	img->data = data;
+	img->xsize = xsize;
+	img->ysize = ysize;
+	img->color_type = color;
 }
 
 /*----------------------------------------------------------------------------*/
@@ -1238,8 +1249,7 @@ int main(int argc, char **argv)
 {
 	struct arguments *arg = process_arguments(USE, argc, argv);
 	FILE *output;
-	unsigned char *image;
-	int X, Y;
+	struct image_char image;
 	double *segs;
 	int n;
 	int dim = 7;
@@ -1256,15 +1266,15 @@ int main(int argc, char **argv)
 	struct lsd_reg my_reg;
 
 	/* read input file */
-	image = read_pgm_image_char(&X, &Y, get_str(arg, "in"));
+	read_pgm_image_char(get_str(arg, "in"), &image);
 
 	if (is_assigned(arg, "square_detect")) {
 		struct point_d corners[4];
-		int is_success = find_square_corner_bitmap(corners, image, X, Y);
+		int is_success = find_square_corner_bitmap(corners, &image, 1.0);
 		if (is_success) {
 			printf("! square found\n");
 			if (is_assigned(arg, "epsfile"))
-				write_eps_corner(corners, get_str(arg, "epsfile"), X, Y);
+				write_eps_corner(corners, get_str(arg, "epsfile"), image.xsize, image.ysize);
 		} else {
 			printf("No square found\n");
 		}
@@ -1272,8 +1282,7 @@ int main(int argc, char **argv)
 	}
 
 	/* execute LSD */
-	segs = LineSegmentDetection(&n, image, X, Y,
-					&my_lsd_param,
+	segs = LineSegmentDetection(&n, &image, &my_lsd_param,
 					is_assigned(arg, "reg") ? &my_reg : NULL);
 
 	/* output */
@@ -1300,18 +1309,18 @@ int main(int argc, char **argv)
 
 	/* create EPS output if needed */
 	if (is_assigned(arg, "epsfile"))
-		write_eps(segs, n, dim, get_str(arg, "epsfile"), X, Y,
+		write_eps(segs, n, dim, get_str(arg, "epsfile"), image.xsize, image.ysize,
 			  get_double(arg, "width"));
 
 	/* create SVG output if needed */
 	if (is_assigned(arg, "svgfile"))
-		write_svg(segs, n, dim, get_str(arg, "svgfile"), X, Y,
+		write_svg(segs, n, dim, get_str(arg, "svgfile"), image.xsize, image.ysize,
 			  get_double(arg, "width"));
 
 	/* free memory */
-	free((void *)segs);
+	free(segs);
 main_clean_up:
-	free((void *)image);
+	free(image.data);
 	free_arguments(arg);
 
 	return EXIT_SUCCESS;
